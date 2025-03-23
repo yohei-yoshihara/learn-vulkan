@@ -1,6 +1,8 @@
 #pragma once
 #include <glm/vec2.hpp>
 #include <gpu.hpp>
+#include <render_target.hpp>
+#include <optional>
 #include <vector>
 
 namespace lvk {
@@ -15,6 +17,13 @@ class Swapchain {
 		return {m_ci.imageExtent.width, m_ci.imageExtent.height};
 	}
 
+	[[nodiscard]] auto acquire_next_image(vk::Semaphore to_signal)
+		-> std::optional<RenderTarget>;
+
+	[[nodiscard]] auto base_barrier() const -> vk::ImageMemoryBarrier2;
+
+	[[nodiscard]] auto present(vk::Queue queue, vk::Semaphore to_wait) -> bool;
+
   private:
 	void populate_images();
 	void create_image_views();
@@ -26,5 +35,6 @@ class Swapchain {
 	vk::UniqueSwapchainKHR m_swapchain{};
 	std::vector<vk::Image> m_images{};
 	std::vector<vk::UniqueImageView> m_image_views{};
+	std::optional<std::size_t> m_image_index{};
 };
 } // namespace lvk
