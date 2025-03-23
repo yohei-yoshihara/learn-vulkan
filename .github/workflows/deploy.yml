@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - main
+      - staging
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -24,12 +25,13 @@ jobs:
         run: |
           cd guide
           mdbook build
+          ls book
       - name: setup pages
         uses: actions/configure-pages@v4
       - name: upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'book'
+          path: 'guide/book'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
