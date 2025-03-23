@@ -69,9 +69,9 @@ Implement them and call them in `run()`:
 
 ```cpp
 void App::run() {
-create_window();
+  create_window();
 
-main_loop();
+  main_loop();
 }
 
 void App::create_window() {
