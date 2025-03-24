@@ -46,6 +46,9 @@ We use a separate render pass for Dear ImGui, again for isolation, and to enable
 
 ```cpp
 m_imgui->end_frame();
+// we don't want to clear the image again, instead load it intact after the
+// previous pass.
+color_attachment.setLoadOp(vk::AttachmentLoadOp::eLoad);
 rendering_info.setColorAttachments(color_attachment)
   .setPDepthAttachment(nullptr);
 command_buffer.beginRendering(rendering_info);
