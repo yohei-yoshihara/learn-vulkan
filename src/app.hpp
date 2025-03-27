@@ -1,16 +1,19 @@
 #pragma once
 #include <dear_imgui.hpp>
 #include <gpu.hpp>
+#include <pipeline_builder.hpp>
 #include <resource_buffering.hpp>
 #include <scoped_waiter.hpp>
 #include <swapchain.hpp>
-#include <vulkan/vulkan.hpp>
 #include <window.hpp>
+#include <filesystem>
 
 namespace lvk {
+namespace fs = std::filesystem;
+
 class App {
   public:
-	void run();
+	void run(std::string_view assets_dir);
 
   private:
 	struct RenderSync {
@@ -32,6 +35,10 @@ class App {
 	void create_swapchain();
 	void create_render_sync();
 	void create_imgui();
+	void create_pipeline_builder();
+	void create_pipelines();
+
+	[[nodiscard]] auto asset_path(std::string_view uri) const -> fs::path;
 
 	void main_loop();
 
@@ -41,6 +48,14 @@ class App {
 	void render(vk::CommandBuffer command_buffer);
 	void transition_for_present(vk::CommandBuffer command_buffer) const;
 	void submit_and_present();
+
+	// ImGui code goes here.
+	void inspect();
+	// Issue draw calls here.
+	void draw(vk::Rect2D const& render_area,
+			  vk::CommandBuffer command_buffer) const;
+
+	fs::path m_assets_dir{};
 
 	// the order of these RAII members is crucially important.
 	glfw::Window m_window{};
@@ -59,6 +74,15 @@ class App {
 	std::size_t m_frame_index{};
 
 	std::optional<DearImGui> m_imgui{};
+	std::optional<PipelineBuilder> m_pipeline_builder{};
+
+	vk::UniquePipelineLayout m_pipeline_layout{};
+	struct {
+		vk::UniquePipeline standard{};
+		vk::UniquePipeline wireframe{};
+	} m_pipelines{};
+	float m_line_width{1.0f};
+	bool m_wireframe{};
 
 	glm::ivec2 m_framebuffer_size{};
 	std::optional<RenderTarget> m_render_target{};

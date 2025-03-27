@@ -1,4 +1,5 @@
 #include <app.hpp>
+#include <shader_loader.hpp>
 #include <cassert>
 #include <chrono>
 #include <print>
@@ -9,7 +10,28 @@ VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 namespace lvk {
 using namespace std::chrono_literals;
 
-void App::run() {
+namespace {
+[[nodiscard]] auto locate_assets_dir(std::string_view const in) -> fs::path {
+	if (!in.empty()) {
+		std::println("[lvk] Using custom assets directory: '{}'", in);
+		return in;
+	}
+	// look for '<path>/assets/', starting from the working
+	// directory and walking up the parent directory tree.
+	static constexpr std::string_view dir_name_v{"assets"};
+	for (auto path = fs::current_path();
+		 !path.empty() && path.has_parent_path(); path = path.parent_path()) {
+		auto ret = path / dir_name_v;
+		if (fs::is_directory(ret)) { return ret; }
+	}
+	std::println("[lvk] Warning: could not locate 'assets' directory");
+	return fs::current_path();
+}
+} // namespace
+
+void App::run(std::string_view const assets_dir) {
+	m_assets_dir = locate_assets_dir(assets_dir);
+
 	create_window();
 	create_instance();
 	create_surface();
@@ -18,6 +40,9 @@ void App::run() {
 	create_swapchain();
 	create_render_sync();
 	create_imgui();
+	create_pipeline_builder();
+
+	create_pipelines();
 
 	main_loop();
 }
@@ -153,6 +178,46 @@ void App::create_imgui() {
 	m_imgui.emplace(imgui_ci);
 }
 
+void App::create_pipeline_builder() {
+	auto const pipeline_builder_ci = PipelineBuilder::CreateInfo{
+		.device = *m_device,
+		.samples = vk::SampleCountFlagBits::e1,
+		.color_format = m_swapchain->get_format(),
+	};
+	m_pipeline_builder.emplace(pipeline_builder_ci);
+}
+
+void App::create_pipelines() {
+	auto shader_loader = ShaderLoader{*m_device};
+	// we only need shader modules to create the pipelines, thus no need to
+	// store them as members.
+	auto const vertex = shader_loader.load(asset_path("shader.vert"));
+	auto const fragment = shader_loader.load(asset_path("shader.frag"));
+	if (!vertex || !fragment) {
+		throw std::runtime_error{"Failed to load Shaders"};
+	}
+	std::println("[lvk] Shaders loaded");
+
+	m_pipeline_layout = m_device->createPipelineLayoutUnique({});
+
+	auto pipeline_state = PipelineState{
+		.vertex_shader = *vertex,
+		.fragment_shader = *fragment,
+	};
+	m_pipelines.standard =
+		m_pipeline_builder->build(*m_pipeline_layout, pipeline_state);
+	pipeline_state.polygon_mode = vk::PolygonMode::eLine;
+	m_pipelines.wireframe =
+		m_pipeline_builder->build(*m_pipeline_layout, pipeline_state);
+	if (!m_pipelines.standard || !m_pipelines.wireframe) {
+		throw std::runtime_error{"Failed to create Graphics Pipelines"};
+	}
+}
+
+auto App::asset_path(std::string_view const uri) const -> fs::path {
+	return m_assets_dir / uri;
+}
+
 void App::main_loop() {
 	while (glfwWindowShouldClose(m_window.get()) == GLFW_FALSE) {
 		glfwPollEvents();
@@ -230,7 +295,7 @@ void App::render(vk::CommandBuffer const command_buffer) {
 		.setLoadOp(vk::AttachmentLoadOp::eClear)
 		.setStoreOp(vk::AttachmentStoreOp::eStore)
 		// temporarily red.
-		.setClearValue(vk::ClearColorValue{1.0f, 0.0f, 0.0f, 1.0f});
+		.setClearValue(vk::ClearColorValue{0.0f, 0.0f, 0.0f, 1.0f});
 	auto rendering_info = vk::RenderingInfo{};
 	auto const render_area =
 		vk::Rect2D{vk::Offset2D{}, m_render_target->extent};
@@ -239,8 +304,8 @@ void App::render(vk::CommandBuffer const command_buffer) {
 		.setLayerCount(1);
 
 	command_buffer.beginRendering(rendering_info);
-	ImGui::ShowDemoWindow();
-	// draw stuff here.
+	inspect();
+	draw(render_area, command_buffer);
 	command_buffer.endRendering();
 
 	m_imgui->end_frame();
@@ -295,5 +360,45 @@ void App::submit_and_present() {
 	if (!m_swapchain->present(m_queue, *render_sync.present)) {
 		m_swapchain->recreate(m_framebuffer_size);
 	}
+}
+
+void App::inspect() {
+	ImGui::ShowDemoWindow();
+
+	ImGui::SetNextWindowSize({200.0f, 100.0f}, ImGuiCond_Once);
+	if (ImGui::Begin("Inspect")) {
+		ImGui::Checkbox("wireframe", &m_wireframe);
+		if (m_wireframe) {
+			auto const& line_width_range =
+				m_gpu.properties.limits.lineWidthRange;
+			ImGui::SetNextItemWidth(100.0f);
+			ImGui::DragFloat("line width", &m_line_width, 0.25f,
+							 line_width_range[0], line_width_range[1]);
+		}
+	}
+	ImGui::End();
+}
+
+void App::draw(vk::Rect2D const& render_area,
+			   vk::CommandBuffer const command_buffer) const {
+	auto const pipeline =
+		m_wireframe ? *m_pipelines.wireframe : *m_pipelines.standard;
+	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+	// we are creating pipelines with dynamic viewport and scissor states.
+	// they must be set here after binding (before drawing).
+	auto viewport = vk::Viewport{};
+	// flip the viewport about the X-axis (negative height):
+	// https://www.saschawillems.de/blog/2019/03/29/flipping-the-vulkan-viewport/
+	viewport.setX(0.0f)
+		.setY(static_cast<float>(m_render_target->extent.height))
+		.setWidth(static_cast<float>(m_render_target->extent.width))
+		.setHeight(-viewport.y);
+	command_buffer.setViewport(0, viewport);
+	command_buffer.setScissor(0, render_area);
+	// line width is also a dynamic state in our pipelines, but setting it is
+	// not required (defaults to 1.0f).
+	command_buffer.setLineWidth(m_line_width);
+	// current shader has hard-coded logic for 3 vertices.
+	command_buffer.draw(3, 1, 0, 0);
 }
 } // namespace lvk
