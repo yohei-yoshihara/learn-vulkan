@@ -62,7 +62,7 @@ auto const layers = get_layers(layers_v);
 instance_ci.setPEnabledLayerNames(layers);
 ```
 
-## `class ShaderObject`
+## `class ShaderProgram`
 
 We will encapsulate both vertex and fragment shaders into a single `ShaderProgram`, which will also bind the shaders before a draw, and expose/set various dynamic states.
 

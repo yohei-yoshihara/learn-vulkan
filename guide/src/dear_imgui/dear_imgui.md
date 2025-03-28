@@ -4,37 +4,37 @@ Dear ImGui has its own initialization and loop, which we encapsulate into `class
 
 ```cpp
 struct DearImGuiCreateInfo {
-	GLFWwindow* window{};
-	std::uint32_t api_version{};
-	vk::Instance instance{};
-	vk::PhysicalDevice physical_device{};
-	std::uint32_t queue_family{};
-	vk::Device device{};
-	vk::Queue queue{};
-	vk::Format color_format{}; // single color attachment.
-	vk::SampleCountFlagBits samples{};
+  GLFWwindow* window{};
+  std::uint32_t api_version{};
+  vk::Instance instance{};
+  vk::PhysicalDevice physical_device{};
+  std::uint32_t queue_family{};
+  vk::Device device{};
+  vk::Queue queue{};
+  vk::Format color_format{}; // single color attachment.
+  vk::SampleCountFlagBits samples{};
 };
 
 class DearImGui {
   public:
-	using CreateInfo = DearImGuiCreateInfo;
+  using CreateInfo = DearImGuiCreateInfo;
 
-	explicit DearImGui(CreateInfo const& create_info);
+  explicit DearImGui(CreateInfo const& create_info);
 
-	void new_frame();
-	void end_frame();
-	void render(vk::CommandBuffer command_buffer) const;
+  void new_frame();
+  void end_frame();
+  void render(vk::CommandBuffer command_buffer) const;
 
   private:
-	enum class State : std::int8_t { Ended, Begun };
+  enum class State : std::int8_t { Ended, Begun };
 
-	struct Deleter {
-		void operator()(vk::Device device) const;
-	};
+  struct Deleter {
+    void operator()(vk::Device device) const;
+  };
 
-	State m_state{};
+  State m_state{};
 
-	Scoped<vk::Device, Deleter> m_device{};
+  Scoped<vk::Device, Deleter> m_device{};
 };
 ```
 
@@ -103,11 +103,11 @@ m_device = Scoped<vk::Device, Deleter>{create_info.device};
 
 // ...
 void DearImGui::Deleter::operator()(vk::Device const device) const {
-	device.waitIdle();
-	ImGui_ImplVulkan_DestroyFontsTexture();
-	ImGui_ImplVulkan_Shutdown();
-	ImGui_ImplGlfw_Shutdown();
-	ImGui::DestroyContext();
+  device.waitIdle();
+  ImGui_ImplVulkan_DestroyFontsTexture();
+  ImGui_ImplVulkan_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
 }
 ```
 
@@ -115,23 +115,23 @@ The remaining functions are straightforward:
 
 ```cpp
 void DearImGui::new_frame() {
-	if (m_state == State::Begun) { end_frame(); }
-	ImGui_ImplGlfw_NewFrame();
-	ImGui_ImplVulkan_NewFrame();
-	ImGui::NewFrame();
-	m_state = State::Begun;
+  if (m_state == State::Begun) { end_frame(); }
+  ImGui_ImplGlfw_NewFrame();
+  ImGui_ImplVulkan_NewFrame();
+  ImGui::NewFrame();
+  m_state = State::Begun;
 }
 
 void DearImGui::end_frame() {
-	if (m_state == State::Ended) { return; }
-	ImGui::Render();
-	m_state = State::Ended;
+  if (m_state == State::Ended) { return; }
+  ImGui::Render();
+  m_state = State::Ended;
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 void DearImGui::render(vk::CommandBuffer const command_buffer) const {
-	auto* data = ImGui::GetDrawData();
-	if (data == nullptr) { return; }
-	ImGui_ImplVulkan_RenderDrawData(data, command_buffer);
+  auto* data = ImGui::GetDrawData();
+  if (data == nullptr) { return; }
+  ImGui_ImplVulkan_RenderDrawData(data, command_buffer);
 }
 ```

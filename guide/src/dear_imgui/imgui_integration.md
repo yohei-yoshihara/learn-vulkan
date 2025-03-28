@@ -12,18 +12,18 @@ Update `Swapchain` to expose its image format:
 
 ```cpp
 void App::create_imgui() {
-	auto const imgui_ci = DearImGui::CreateInfo{
-		.window = m_window.get(),
-		.api_version = vk_version_v,
-		.instance = *m_instance,
-		.physical_device = m_gpu.device,
-		.queue_family = m_gpu.queue_family,
-		.device = *m_device,
-		.queue = m_queue,
-		.color_format = m_swapchain->get_format(),
-		.samples = vk::SampleCountFlagBits::e1,
-	};
-	m_imgui.emplace(imgui_ci);
+  auto const imgui_ci = DearImGui::CreateInfo{
+    .window = m_window.get(),
+    .api_version = vk_version_v,
+    .instance = *m_instance,
+    .physical_device = m_gpu.device,
+    .queue_family = m_gpu.queue_family,
+    .device = *m_device,
+    .queue = m_queue,
+    .color_format = m_swapchain->get_format(),
+    .samples = vk::SampleCountFlagBits::e1,
+  };
+  m_imgui.emplace(imgui_ci);
 }
 ```
 
