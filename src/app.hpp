@@ -1,9 +1,9 @@
 #pragma once
 #include <dear_imgui.hpp>
 #include <gpu.hpp>
-#include <pipeline_builder.hpp>
 #include <resource_buffering.hpp>
 #include <scoped_waiter.hpp>
+#include <shader_program.hpp>
 #include <swapchain.hpp>
 #include <window.hpp>
 #include <filesystem>
@@ -13,7 +13,7 @@ namespace fs = std::filesystem;
 
 class App {
   public:
-	void run(std::string_view assets_dir);
+	void run();
 
   private:
 	struct RenderSync {
@@ -35,8 +35,7 @@ class App {
 	void create_swapchain();
 	void create_render_sync();
 	void create_imgui();
-	void create_pipeline_builder();
-	void create_pipelines();
+	void create_shader();
 
 	[[nodiscard]] auto asset_path(std::string_view uri) const -> fs::path;
 
@@ -52,8 +51,7 @@ class App {
 	// ImGui code goes here.
 	void inspect();
 	// Issue draw calls here.
-	void draw(vk::Rect2D const& render_area,
-			  vk::CommandBuffer command_buffer) const;
+	void draw(vk::CommandBuffer command_buffer) const;
 
 	fs::path m_assets_dir{};
 
@@ -74,18 +72,12 @@ class App {
 	std::size_t m_frame_index{};
 
 	std::optional<DearImGui> m_imgui{};
-	std::optional<PipelineBuilder> m_pipeline_builder{};
 
-	vk::UniquePipelineLayout m_pipeline_layout{};
-	struct {
-		vk::UniquePipeline standard{};
-		vk::UniquePipeline wireframe{};
-	} m_pipelines{};
-	float m_line_width{1.0f};
-	bool m_wireframe{};
+	std::optional<ShaderProgram> m_shader{};
 
 	glm::ivec2 m_framebuffer_size{};
 	std::optional<RenderTarget> m_render_target{};
+	bool m_wireframe{};
 
 	// waiter must be the last member to ensure it blocks until device is idle
 	// before other members get destroyed.

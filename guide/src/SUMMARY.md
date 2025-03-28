@@ -16,6 +16,9 @@
   - [Vulkan Device](initialization/device.md)
   - [Scoped Waiter](initialization/scoped_waiter.md)
   - [Swapchain](initialization/swapchain.md)
+
+# Hello Triangle
+
 - [Rendering](rendering/README.md)
   - [Swapchain Loop](rendering/swapchain_loop.md)
   - [Render Sync](rendering/render_sync.md)
@@ -24,9 +27,9 @@
 - [Dear ImGui](dear_imgui/README.md)
   - [class DearImGui](dear_imgui/dear_imgui.md)
   - [ImGui Integration](dear_imgui/imgui_integration.md)
-- [Graphics Pipeline](pipeline/README.md)
-  - [Locating Assets](pipeline/locating_assets.md)
-  - [Shaders](pipeline/shaders.md)
-  - [Pipeline Creation](pipeline/pipeline_creation.md)
-  - [Drawing a Triangle](pipeline/drawing_triangle.md)
-  - [Switching Pipelines](pipeline/switching_pipelines.md)
+- [Shader Objects](shader_objects/README.md)
+  - [Locating Assets](shader_objects/locating_assets.md)
+  - [Shader Program](shader_objects/shader_program.md)
+  - [GLSL to SPIR-V](shader_objects/glsl_to_spir_v.md)
+  - [Drawing a Triangle](shader_objects/drawing_triangle.md)
+  - [Graphics Pipelines](shader_objects/pipelines.md)

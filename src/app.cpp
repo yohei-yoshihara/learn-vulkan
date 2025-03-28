@@ -1,7 +1,7 @@
 #include <app.hpp>
-#include <shader_loader.hpp>
 #include <cassert>
 #include <chrono>
+#include <fstream>
 #include <print>
 #include <ranges>
 
@@ -11,11 +11,7 @@ namespace lvk {
 using namespace std::chrono_literals;
 
 namespace {
-[[nodiscard]] auto locate_assets_dir(std::string_view const in) -> fs::path {
-	if (!in.empty()) {
-		std::println("[lvk] Using custom assets directory: '{}'", in);
-		return in;
-	}
+[[nodiscard]] auto locate_assets_dir() -> fs::path {
 	// look for '<path>/assets/', starting from the working
 	// directory and walking up the parent directory tree.
 	static constexpr std::string_view dir_name_v{"assets"};
@@ -27,10 +23,54 @@ namespace {
 	std::println("[lvk] Warning: could not locate 'assets' directory");
 	return fs::current_path();
 }
+
+[[nodiscard]] auto get_layers(std::span<char const* const> desired)
+	-> std::vector<char const*> {
+	auto ret = std::vector<char const*>{};
+	ret.reserve(desired.size());
+	auto const available = vk::enumerateInstanceLayerProperties();
+	for (char const* layer : desired) {
+		auto const pred = [layer = std::string_view{layer}](
+							  vk::LayerProperties const& properties) {
+			return properties.layerName == layer;
+		};
+		if (std::ranges::find_if(available, pred) == available.end()) {
+			std::println("[lvk] [WARNING] Vulkan Layer '{}' not found", layer);
+			continue;
+		}
+		ret.push_back(layer);
+	}
+	return ret;
+}
+
+[[nodiscard]] auto to_spir_v(fs::path const& path)
+	-> std::vector<std::uint32_t> {
+	// open the file at the end, to get the total size.
+	auto file = std::ifstream{path, std::ios::binary | std::ios::ate};
+	if (!file.is_open()) {
+		throw std::runtime_error{
+			std::format("Failed to open file: '{}'", path.generic_string())};
+	}
+
+	auto const size = file.tellg();
+	auto const usize = static_cast<std::uint64_t>(size);
+	// file data must be uint32 aligned.
+	if (usize % sizeof(std::uint32_t) != 0) {
+		throw std::runtime_error{std::format("Invalid SPIR-V size: {}", usize)};
+	}
+
+	// seek to the beginning before reading.
+	file.seekg({}, std::ios::beg);
+	auto ret = std::vector<std::uint32_t>{};
+	ret.resize(usize / sizeof(std::uint32_t));
+	void* data = ret.data();
+	file.read(static_cast<char*>(data), size);
+	return ret;
+}
 } // namespace
 
-void App::run(std::string_view const assets_dir) {
-	m_assets_dir = locate_assets_dir(assets_dir);
+void App::run() {
+	m_assets_dir = locate_assets_dir();
 
 	create_window();
 	create_instance();
@@ -40,9 +80,7 @@ void App::run(std::string_view const assets_dir) {
 	create_swapchain();
 	create_render_sync();
 	create_imgui();
-	create_pipeline_builder();
-
-	create_pipelines();
+	create_shader();
 
 	main_loop();
 }
@@ -67,6 +105,13 @@ void App::create_instance() {
 	auto const extensions = glfw::instance_extensions();
 	instance_ci.setPApplicationInfo(&app_info).setPEnabledExtensionNames(
 		extensions);
+
+	// add the Shader Object emulation layer.
+	static constexpr auto layers_v = std::array{
+		"VK_LAYER_KHRONOS_shader_object",
+	};
+	auto const layers = get_layers(layers_v);
+	instance_ci.setPEnabledLayerNames(layers);
 
 	m_instance = vk::createInstanceUnique(instance_ci);
 	// initialize the dispatcher against the created Instance.
@@ -106,11 +151,16 @@ void App::create_device() {
 	// and later device_ci.pNext => sync_feature.
 	// this is 'pNext chaining'.
 	sync_feature.setPNext(&dynamic_rendering_feature);
+	auto shader_object_feature =
+		vk::PhysicalDeviceShaderObjectFeaturesEXT{vk::True};
+	dynamic_rendering_feature.setPNext(&shader_object_feature);
 
 	auto device_ci = vk::DeviceCreateInfo{};
-	// we only need one device extension: Swapchain.
-	static constexpr auto extensions_v =
-		std::array{VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+	// we need two device extensions: Swapchain and Shader Object.
+	static constexpr auto extensions_v = std::array{
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		"VK_EXT_shader_object",
+	};
 	device_ci.setPEnabledExtensionNames(extensions_v)
 		.setQueueCreateInfos(queue_ci)
 		.setPEnabledFeatures(&enabled_features)
@@ -178,40 +228,17 @@ void App::create_imgui() {
 	m_imgui.emplace(imgui_ci);
 }
 
-void App::create_pipeline_builder() {
-	auto const pipeline_builder_ci = PipelineBuilder::CreateInfo{
+void App::create_shader() {
+	auto const vertex_spirv = to_spir_v(asset_path("shader.vert"));
+	auto const fragment_spirv = to_spir_v(asset_path("shader.frag"));
+	auto const shader_ci = ShaderProgram::CreateInfo{
 		.device = *m_device,
-		.samples = vk::SampleCountFlagBits::e1,
-		.color_format = m_swapchain->get_format(),
+		.vertex_spirv = vertex_spirv,
+		.fragment_spirv = fragment_spirv,
+		.vertex_input = {},
+		.set_layouts = {},
 	};
-	m_pipeline_builder.emplace(pipeline_builder_ci);
-}
-
-void App::create_pipelines() {
-	auto shader_loader = ShaderLoader{*m_device};
-	// we only need shader modules to create the pipelines, thus no need to
-	// store them as members.
-	auto const vertex = shader_loader.load(asset_path("shader.vert"));
-	auto const fragment = shader_loader.load(asset_path("shader.frag"));
-	if (!vertex || !fragment) {
-		throw std::runtime_error{"Failed to load Shaders"};
-	}
-	std::println("[lvk] Shaders loaded");
-
-	m_pipeline_layout = m_device->createPipelineLayoutUnique({});
-
-	auto pipeline_state = PipelineState{
-		.vertex_shader = *vertex,
-		.fragment_shader = *fragment,
-	};
-	m_pipelines.standard =
-		m_pipeline_builder->build(*m_pipeline_layout, pipeline_state);
-	pipeline_state.polygon_mode = vk::PolygonMode::eLine;
-	m_pipelines.wireframe =
-		m_pipeline_builder->build(*m_pipeline_layout, pipeline_state);
-	if (!m_pipelines.standard || !m_pipelines.wireframe) {
-		throw std::runtime_error{"Failed to create Graphics Pipelines"};
-	}
+	m_shader.emplace(shader_ci);
 }
 
 auto App::asset_path(std::string_view const uri) const -> fs::path {
@@ -307,7 +334,7 @@ void App::render(vk::CommandBuffer const command_buffer) {
 
 	command_buffer.beginRendering(rendering_info);
 	inspect();
-	draw(render_area, command_buffer);
+	draw(command_buffer);
 	command_buffer.endRendering();
 
 	m_imgui->end_frame();
@@ -375,37 +402,23 @@ void App::inspect() {
 
 	ImGui::SetNextWindowSize({200.0f, 100.0f}, ImGuiCond_Once);
 	if (ImGui::Begin("Inspect")) {
-		ImGui::Checkbox("wireframe", &m_wireframe);
+		if (ImGui::Checkbox("wireframe", &m_wireframe)) {
+			m_shader->polygon_mode =
+				m_wireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill;
+		}
 		if (m_wireframe) {
 			auto const& line_width_range =
 				m_gpu.properties.limits.lineWidthRange;
 			ImGui::SetNextItemWidth(100.0f);
-			ImGui::DragFloat("line width", &m_line_width, 0.25f,
+			ImGui::DragFloat("line width", &m_shader->line_width, 0.25f,
 							 line_width_range[0], line_width_range[1]);
 		}
 	}
 	ImGui::End();
 }
 
-void App::draw(vk::Rect2D const& render_area,
-			   vk::CommandBuffer const command_buffer) const {
-	auto const pipeline =
-		m_wireframe ? *m_pipelines.wireframe : *m_pipelines.standard;
-	command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
-	// we are creating pipelines with dynamic viewport and scissor states.
-	// they must be set here after binding (before drawing).
-	auto viewport = vk::Viewport{};
-	// flip the viewport about the X-axis (negative height):
-	// https://www.saschawillems.de/blog/2019/03/29/flipping-the-vulkan-viewport/
-	viewport.setX(0.0f)
-		.setY(static_cast<float>(m_render_target->extent.height))
-		.setWidth(static_cast<float>(m_render_target->extent.width))
-		.setHeight(-viewport.y);
-	command_buffer.setViewport(0, viewport);
-	command_buffer.setScissor(0, render_area);
-	// line width is also a dynamic state in our pipelines, but setting it is
-	// not required (defaults to 1.0f).
-	command_buffer.setLineWidth(m_line_width);
+void App::draw(vk::CommandBuffer const command_buffer) const {
+	m_shader->bind(command_buffer, m_framebuffer_size);
 	// current shader has hard-coded logic for 3 vertices.
 	command_buffer.draw(3, 1, 0, 0);
 }

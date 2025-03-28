@@ -1,6 +1,10 @@
-# Pipeline Creation
+# Graphics Pipelines
 
-To constrain ourselves to a subset of pipeline state to worry about, create a custom `struct PipelineState`:
+This page describes the usage of Graphics Pipelines _instead of_ Shader Objects. While the guide assumes Shader Object usage, not much should change in the rest of the code if you instead choose to use Graphics Pipelines. A notable exception is the setup of Descriptor Set Layouts: with pipelines it needs to be specified as part of the Pipeline Layout, whereas with Shader Objects it is part of each ShaderEXT's CreateInfo.
+
+## Pipeline State
+
+Most dynamic state with Shader Objects is static with pipelines: specified at pipeline creation time. Pipelines also require additional parameters, like attachment formats and sample count: these will be considered constant and stored in the builder later. Expose a subset of dynamic states through a struct:
 
 ```cpp
 // bit flags for various binary Pipeline States.
@@ -34,7 +38,7 @@ struct PipelineState {
 };
 ```
 
-Encapsulate the exhausting process of building a pipeline into its own class:
+Encapsulate building pipelines into a class:
 
 ```cpp
 struct PipelineBuilderCreateInfo {
@@ -48,7 +52,8 @@ class PipelineBuilder {
   public:
   using CreateInfo = PipelineBuilderCreateInfo;
 
-  explicit PipelineBuilder(CreateInfo const& create_info);
+  explicit PipelineBuilder(CreateInfo const& create_info)
+    : m_info(create_info) {}
 
   [[nodiscard]] auto build(vk::PipelineLayout layout,
                PipelineState const& state) const
@@ -59,7 +64,7 @@ class PipelineBuilder {
 };
 ```
 
-Before implementing `build()`, add some helper functions/constants, starting with the viewport and dynamic states:
+The implementation is quite verbose, splitting it into multiple functions helps a bit:
 
 ```cpp
 // single viewport and scissor.
@@ -72,14 +77,9 @@ constexpr auto dynamic_states_v = std::array{
   vk::DynamicState::eScissor,
   vk::DynamicState::eLineWidth,
 };
-```
 
-The shader stages:
-
-```cpp
-[[nodiscard]] constexpr auto
-create_shader_stages(vk::ShaderModule const vertex,
-           vk::ShaderModule const fragment) {
+[[nodiscard]] auto create_shader_stages(vk::ShaderModule const vertex,
+                    vk::ShaderModule const fragment) {
   // set vertex (0) and fragment (1) shader stages.
   auto ret = std::array<vk::PipelineShaderStageCreateInfo, 2>{};
   ret[0]
@@ -92,11 +92,7 @@ create_shader_stages(vk::ShaderModule const vertex,
     .setModule(fragment);
   return ret;
 }
-```
 
-The depth/stencil state:
-
-```cpp
 [[nodiscard]] constexpr auto
 create_depth_stencil_state(std::uint8_t flags,
                vk::CompareOp const depth_compare) {
@@ -107,11 +103,7 @@ create_depth_stencil_state(std::uint8_t flags,
     .setDepthCompareOp(depth_compare);
   return ret;
 }
-```
 
-And a color blend attachment:
-
-```cpp
 [[nodiscard]] constexpr auto
 create_color_blend_attachment(std::uint8_t const flags) {
   auto ret = vk::PipelineColorBlendAttachmentState{};
@@ -130,11 +122,8 @@ create_color_blend_attachment(std::uint8_t const flags) {
     .setAlphaBlendOp(vk::BlendOp::eAdd);
   return ret;
 }
-```
 
-Now we can implement `build()`:
-
-```cpp
+// ...
 auto PipelineBuilder::build(vk::PipelineLayout const layout,
               PipelineState const& state) const
   -> vk::UniquePipeline {
@@ -194,9 +183,72 @@ auto PipelineBuilder::build(vk::PipelineLayout const layout,
   // use non-throwing API.
   if (m_info.device.createGraphicsPipelines({}, 1, &pipeline_ci, {}, &ret) !=
     vk::Result::eSuccess) {
+    std::println(stderr, "[lvk] Failed to create Graphics Pipeline");
     return {};
   }
 
   return vk::UniquePipeline{ret, m_info.device};
+}
+```
+
+`App` will need to store a builder, a Pipeline Layout, and the Pipeline(s):
+
+```cpp
+std::optional<PipelineBuilder> m_pipeline_builder{};
+vk::UniquePipelineLayout m_pipeline_layout{};
+vk::UniquePipeline m_pipeline{};
+
+// ...
+void create_pipeline() {
+  auto const vertex_spirv = to_spir_v(asset_path("shader.vert"));
+  auto const fragment_spirv = to_spir_v(asset_path("shader.frag"));
+  if (vertex_spirv.empty() || fragment_spirv.empty()) {
+    throw std::runtime_error{"Failed to load shaders"};
+  }
+
+  auto pipeline_layout_ci = vk::PipelineLayoutCreateInfo{};
+  pipeline_layout_ci.setSetLayouts({});
+  m_pipeline_layout =
+    m_device->createPipelineLayoutUnique(pipeline_layout_ci);
+
+  auto const pipeline_builder_ci = PipelineBuilder::CreateInfo{
+    .device = *m_device,
+    .samples = vk::SampleCountFlagBits::e1,
+    .color_format = m_swapchain->get_format(),
+  };
+  m_pipeline_builder.emplace(pipeline_builder_ci);
+
+  auto vertex_ci = vk::ShaderModuleCreateInfo{};
+  vertex_ci.setCode(vertex_spirv);
+  auto fragment_ci = vk::ShaderModuleCreateInfo{};
+  fragment_ci.setCode(fragment_spirv);
+
+  auto const vertex_shader =
+    m_device->createShaderModuleUnique(vertex_ci);
+  auto const fragment_shader =
+    m_device->createShaderModuleUnique(fragment_ci);
+  auto const pipeline_state = PipelineState{
+    .vertex_shader = *vertex_shader,
+    .fragment_shader = *fragment_shader,
+  };
+  m_pipeline =
+    m_pipeline_builder->build(*m_pipeline_layout, pipeline_state);
+}
+```
+
+Finally, `App::draw()`:
+
+```cpp
+void draw(vk::CommandBuffer const command_buffer) const {
+  command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                *m_pipeline);
+  auto viewport = vk::Viewport{};
+  viewport.setX(0.0f)
+    .setY(static_cast<float>(m_render_target->extent.height))
+    .setWidth(static_cast<float>(m_render_target->extent.width))
+    .setHeight(-viewport.y);
+  command_buffer.setViewport(0, viewport);
+  command_buffer.setScissor(0, vk::Rect2D{{}, m_render_target->extent});
+  command_buffer.draw(3, 1, 0, 0);
 }
 ```
