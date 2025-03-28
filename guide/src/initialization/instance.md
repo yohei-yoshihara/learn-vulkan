@@ -2,7 +2,7 @@
 
 Instead of linking to Vulkan (via the SDK) at build-time, we will load Vulkan at runtime. This requires a few adjustments:
 
-1. In the CMake script `VK_NO_PROTOTYPES` is defined, which turns API function declarations into function pointers
+1. In the CMake ext target `VK_NO_PROTOTYPES` is defined, which turns API function declarations into function pointers
 1. In `app.cpp` this line is added to the global scope: `VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE`
 1. Before and during initialization `VULKAN_HPP_DEFAULT_DISPATCHER.init()` is called
 
@@ -74,6 +74,12 @@ If this line or equivalent is not visible in the logs, re-check your Vulkan Conf
 
 ```
 INFO | LAYER:      Insert instance layer "VK_LAYER_KHRONOS_validation"
+```
+
+For instance, if `libVkLayer_khronos_validation.so` / `VkLayer_khronos_validation.dll` is not visible to the app / loader, you'll see a line similar to:
+
+```
+INFO | LAYER:   Requested layer "VK_LAYER_KHRONOS_validation" failed to load.
 ```
 
 Congratulations, you have successfully initialized a Vulkan Instance!

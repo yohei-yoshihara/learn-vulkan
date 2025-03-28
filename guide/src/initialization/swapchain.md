@@ -64,7 +64,7 @@ get_surface_format(std::span<vk::SurfaceFormatKHR const> supported)
 }
 ```
 
-An sRGB format is preferred because that is what the screen's color space is in. This is indicated by the fact that the only core [Color Format](https://registry.khronos.org/vulkan/specs/latest/man/html/VkColorSpaceKHR.html) is `vk::ColorSpaceKHR::eVkColorspaceSrgbNonlinear`, which specifies support for the images in sRGB color space.
+An sRGB format is preferred because that is what the screen's color space is in. This is indicated by the fact that the only core [Color Space](https://registry.khronos.org/vulkan/specs/latest/man/html/VkColorSpaceKHR.html) is `vk::ColorSpaceKHR::eVkColorspaceSrgbNonlinear`, which specifies support for the images in sRGB color space.
 
 The constructor can now be implemented:
 

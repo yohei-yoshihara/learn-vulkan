@@ -8,7 +8,7 @@ To fill that gap, this guide has the following goals:
 - Focus on keeping it simple and straightforward, _not_ on performance
 - Develop a basic but dynamic rendering foundation
 
-To reiterate, the focus is _not on performance_, it is on a quick introduction to the current standard multi-platform graphics API while utilizing the modern paradigms and tools (at the time of writing). Even disregarding potential performance gains, Vulkan has a better and modern design and ecosystem than OpenGL, eg: there is no global state machine, parameters are passed by filling structs with meaningful member variable names, multi-threading is largely trivial (yes, it is actually easier to do on Vulkan than OpenGL), there are a comprehensive set of validation layers to catch misuse which can be enabled without _any_ changes to application code, etc.
+To reiterate, the focus is _not on performance_, it is on a quick introduction to the current standard multi-platform graphics API while utilizing the modern paradigms and tools (at the time of writing). Even disregarding potential performance gains, Vulkan has a better and more modern design and ecosystem than OpenGL, eg: there is no global state machine, parameters are passed by filling structs with meaningful member variable names, multi-threading is largely trivial (yes, it is actually easier to do on Vulkan than OpenGL), there are a comprehensive set of validation layers to catch misuse which can be enabled without _any_ changes to application code, etc.
 
 ## Target Audience
 

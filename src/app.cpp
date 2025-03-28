@@ -20,7 +20,7 @@ namespace {
 		auto ret = path / dir_name_v;
 		if (fs::is_directory(ret)) { return ret; }
 	}
-	std::println("[lvk] Warning: could not locate 'assets' directory");
+	std::println("[lvk] Warning: could not locate '{}' directory", dir_name_v);
 	return fs::current_path();
 }
 
