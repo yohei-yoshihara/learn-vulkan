@@ -1,4 +1,6 @@
 #include <app.hpp>
+#include <vertex.hpp>
+#include <bit>
 #include <cassert>
 #include <chrono>
 #include <fstream>
@@ -11,6 +13,11 @@ namespace lvk {
 using namespace std::chrono_literals;
 
 namespace {
+template <typename T>
+[[nodiscard]] constexpr auto to_byte_array(T const& t) {
+	return std::bit_cast<std::array<std::byte, sizeof(T)>>(t);
+}
+
 [[nodiscard]] auto locate_assets_dir() -> fs::path {
 	// look for '<path>/assets/', starting from the working
 	// directory and walking up the parent directory tree.
@@ -77,10 +84,14 @@ void App::run() {
 	create_surface();
 	select_gpu();
 	create_device();
+	create_allocator();
 	create_swapchain();
 	create_render_sync();
 	create_imgui();
 	create_shader();
+	create_cmd_block_pool();
+
+	create_vertex_buffer();
 
 	main_loop();
 }
@@ -228,21 +239,73 @@ void App::create_imgui() {
 	m_imgui.emplace(imgui_ci);
 }
 
+void App::create_allocator() {
+	m_allocator = vma::create_allocator(*m_instance, m_gpu.device, *m_device);
+}
+
 void App::create_shader() {
 	auto const vertex_spirv = to_spir_v(asset_path("shader.vert"));
 	auto const fragment_spirv = to_spir_v(asset_path("shader.frag"));
+
+	static constexpr auto vertex_input_v = ShaderVertexInput{
+		.attributes = vertex_attributes_v,
+		.bindings = vertex_bindings_v,
+	};
 	auto const shader_ci = ShaderProgram::CreateInfo{
 		.device = *m_device,
 		.vertex_spirv = vertex_spirv,
 		.fragment_spirv = fragment_spirv,
-		.vertex_input = {},
+		.vertex_input = vertex_input_v,
 		.set_layouts = {},
 	};
 	m_shader.emplace(shader_ci);
 }
 
+void App::create_cmd_block_pool() {
+	auto command_pool_ci = vk::CommandPoolCreateInfo{};
+	command_pool_ci
+		.setQueueFamilyIndex(m_gpu.queue_family)
+		// this flag indicates that the allocated Command Buffers will be
+		// short-lived.
+		.setFlags(vk::CommandPoolCreateFlagBits::eTransient);
+	m_cmd_block_pool = m_device->createCommandPoolUnique(command_pool_ci);
+}
+
+void App::create_vertex_buffer() {
+	// vertices of a quad.
+	static constexpr auto vertices_v = std::array{
+		Vertex{.position = {-0.5f, -0.5f}, .color = {1.0f, 0.0f, 0.0f}},
+		Vertex{.position = {0.5f, -0.5f}, .color = {0.0f, 1.0f, 0.0f}},
+		Vertex{.position = {0.5f, 0.5f}, .color = {0.0f, 0.0f, 1.0f}},
+		Vertex{.position = {-0.5f, 0.5f}, .color = {1.0f, 1.0f, 0.0f}},
+	};
+	static constexpr auto indices_v = std::array{
+		0u, 1u, 2u, 2u, 3u, 0u,
+	};
+	static constexpr auto vertices_bytes_v = to_byte_array(vertices_v);
+	static constexpr auto indices_bytes_v = to_byte_array(indices_v);
+	static constexpr auto total_bytes_v =
+		std::array<std::span<std::byte const>, 2>{
+			vertices_bytes_v,
+			indices_bytes_v,
+		};
+	// we want to write total_bytes_v to a Device VertexBuffer | IndexBuffer.
+	auto const buffer_ci = vma::BufferCreateInfo{
+		.allocator = m_allocator.get(),
+		.usage = vk::BufferUsageFlagBits::eVertexBuffer |
+				 vk::BufferUsageFlagBits::eIndexBuffer,
+		.queue_family = m_gpu.queue_family,
+	};
+	m_vbo = vma::create_device_buffer(buffer_ci, create_command_block(),
+									  total_bytes_v);
+}
+
 auto App::asset_path(std::string_view const uri) const -> fs::path {
 	return m_assets_dir / uri;
+}
+
+auto App::create_command_block() const -> CommandBlock {
+	return CommandBlock{*m_device, m_queue, *m_cmd_block_pool};
 }
 
 void App::main_loop() {
@@ -419,7 +482,12 @@ void App::inspect() {
 
 void App::draw(vk::CommandBuffer const command_buffer) const {
 	m_shader->bind(command_buffer, m_framebuffer_size);
-	// current shader has hard-coded logic for 3 vertices.
-	command_buffer.draw(3, 1, 0, 0);
+	// single VBO at binding 0 at no offset.
+	command_buffer.bindVertexBuffers(0, m_vbo.get().buffer, vk::DeviceSize{});
+	// u32 indices after offset of 4 vertices.
+	command_buffer.bindIndexBuffer(m_vbo.get().buffer, 4 * sizeof(Vertex),
+								   vk::IndexType::eUint32);
+	// m_vbo has 6 indices.
+	command_buffer.drawIndexed(6, 1, 0, 0, 0);
 }
 } // namespace lvk

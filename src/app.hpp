@@ -1,10 +1,12 @@
 #pragma once
+#include <command_block.hpp>
 #include <dear_imgui.hpp>
 #include <gpu.hpp>
 #include <resource_buffering.hpp>
 #include <scoped_waiter.hpp>
 #include <shader_program.hpp>
 #include <swapchain.hpp>
+#include <vma.hpp>
 #include <window.hpp>
 #include <filesystem>
 
@@ -35,9 +37,13 @@ class App {
 	void create_swapchain();
 	void create_render_sync();
 	void create_imgui();
+	void create_allocator();
 	void create_shader();
+	void create_cmd_block_pool();
+	void create_vertex_buffer();
 
 	[[nodiscard]] auto asset_path(std::string_view uri) const -> fs::path;
+	[[nodiscard]] auto create_command_block() const -> CommandBlock;
 
 	void main_loop();
 
@@ -61,11 +67,14 @@ class App {
 	vk::UniqueSurfaceKHR m_surface{};
 	Gpu m_gpu{}; // not an RAII member.
 	vk::UniqueDevice m_device{};
-	vk::Queue m_queue{}; // not an RAII member.
+	vk::Queue m_queue{};		  // not an RAII member.
+	vma::Allocator m_allocator{}; // anywhere between m_device and m_shader.
 
 	std::optional<Swapchain> m_swapchain{};
 	// command pool for all render Command Buffers.
 	vk::UniqueCommandPool m_render_cmd_pool{};
+	// command pool for all Command Blocks.
+	vk::UniqueCommandPool m_cmd_block_pool{};
 	// Sync and Command Buffer for virtual frames.
 	Buffered<RenderSync> m_render_sync{};
 	// Current virtual frame index.
@@ -74,6 +83,8 @@ class App {
 	std::optional<DearImGui> m_imgui{};
 
 	std::optional<ShaderProgram> m_shader{};
+
+	vma::Buffer m_vbo{};
 
 	glm::ivec2 m_framebuffer_size{};
 	std::optional<RenderTarget> m_render_target{};

@@ -33,3 +33,13 @@
   - [GLSL to SPIR-V](shader_objects/glsl_to_spir_v.md)
   - [Drawing a Triangle](shader_objects/drawing_triangle.md)
   - [Graphics Pipelines](shader_objects/pipelines.md)
+
+# Shader Resources
+
+- [Memory Allocation](memory/README.md)
+  - [Vulkan Memory Allocator](memory/vma.md)
+  - [Buffers](memory/buffers.md)
+  - [Vertex Buffer](memory/vertex_buffer.md)
+  - [Command Block](memory/command_block.md)
+  - [Device Buffers](memory/device_buffers.md)
+  - [Images](memory/images.md)
