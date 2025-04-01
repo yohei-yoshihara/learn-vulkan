@@ -1,4 +1,5 @@
 #include <app.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <vertex.hpp>
 #include <bit>
 #include <cassert>
@@ -16,6 +17,12 @@ namespace {
 template <typename T>
 [[nodiscard]] constexpr auto to_byte_array(T const& t) {
 	return std::bit_cast<std::array<std::byte, sizeof(T)>>(t);
+}
+
+constexpr auto layout_binding(std::uint32_t binding,
+							  vk::DescriptorType const type) {
+	return vk::DescriptorSetLayoutBinding{
+		binding, type, 1, vk::ShaderStageFlagBits::eAllGraphics};
 }
 
 [[nodiscard]] auto locate_assets_dir() -> fs::path {
@@ -88,10 +95,13 @@ void App::run() {
 	create_swapchain();
 	create_render_sync();
 	create_imgui();
+	create_descriptor_pool();
+	create_pipeline_layout();
 	create_shader();
 	create_cmd_block_pool();
 
-	create_vertex_buffer();
+	create_shader_resources();
+	create_descriptor_sets();
 
 	main_loop();
 }
@@ -243,6 +253,43 @@ void App::create_allocator() {
 	m_allocator = vma::create_allocator(*m_instance, m_gpu.device, *m_device);
 }
 
+void App::create_descriptor_pool() {
+	static constexpr auto pool_sizes_v = std::array{
+		// 2 uniform buffers, can be more if desired.
+		vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 2},
+		vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, 2},
+		vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 2},
+	};
+	auto pool_ci = vk::DescriptorPoolCreateInfo{};
+	// allow 16 sets to be allocated from this pool.
+	pool_ci.setPoolSizes(pool_sizes_v).setMaxSets(16);
+	m_descriptor_pool = m_device->createDescriptorPoolUnique(pool_ci);
+}
+
+void App::create_pipeline_layout() {
+	static constexpr auto set_0_bindings_v = std::array{
+		layout_binding(0, vk::DescriptorType::eUniformBuffer),
+	};
+	static constexpr auto set_1_bindings_v = std::array{
+		layout_binding(0, vk::DescriptorType::eCombinedImageSampler),
+		layout_binding(1, vk::DescriptorType::eStorageBuffer),
+	};
+	auto set_layout_cis = std::array<vk::DescriptorSetLayoutCreateInfo, 2>{};
+	set_layout_cis[0].setBindings(set_0_bindings_v);
+	set_layout_cis[1].setBindings(set_1_bindings_v);
+
+	for (auto const& set_layout_ci : set_layout_cis) {
+		m_set_layouts.push_back(
+			m_device->createDescriptorSetLayoutUnique(set_layout_ci));
+		m_set_layout_views.push_back(*m_set_layouts.back());
+	}
+
+	auto pipeline_layout_ci = vk::PipelineLayoutCreateInfo{};
+	pipeline_layout_ci.setSetLayouts(m_set_layout_views);
+	m_pipeline_layout =
+		m_device->createPipelineLayoutUnique(pipeline_layout_ci);
+}
+
 void App::create_shader() {
 	auto const vertex_spirv = to_spir_v(asset_path("shader.vert"));
 	auto const fragment_spirv = to_spir_v(asset_path("shader.frag"));
@@ -256,7 +303,7 @@ void App::create_shader() {
 		.vertex_spirv = vertex_spirv,
 		.fragment_spirv = fragment_spirv,
 		.vertex_input = vertex_input_v,
-		.set_layouts = {},
+		.set_layouts = m_set_layout_views,
 	};
 	m_shader.emplace(shader_ci);
 }
@@ -271,13 +318,13 @@ void App::create_cmd_block_pool() {
 	m_cmd_block_pool = m_device->createCommandPoolUnique(command_pool_ci);
 }
 
-void App::create_vertex_buffer() {
+void App::create_shader_resources() {
 	// vertices of a quad.
 	static constexpr auto vertices_v = std::array{
-		Vertex{.position = {-0.5f, -0.5f}, .color = {1.0f, 0.0f, 0.0f}},
-		Vertex{.position = {0.5f, -0.5f}, .color = {0.0f, 1.0f, 0.0f}},
-		Vertex{.position = {0.5f, 0.5f}, .color = {0.0f, 0.0f, 1.0f}},
-		Vertex{.position = {-0.5f, 0.5f}, .color = {1.0f, 1.0f, 0.0f}},
+		Vertex{.position = {-200.0f, -200.0f}, .uv = {0.0f, 1.0f}},
+		Vertex{.position = {200.0f, -200.0f}, .uv = {1.0f, 1.0f}},
+		Vertex{.position = {200.0f, 200.0f}, .uv = {1.0f, 0.0f}},
+		Vertex{.position = {-200.0f, 200.0f}, .uv = {0.0f, 0.0f}},
 	};
 	static constexpr auto indices_v = std::array{
 		0u, 1u, 2u, 2u, 3u, 0u,
@@ -298,6 +345,43 @@ void App::create_vertex_buffer() {
 	};
 	m_vbo = vma::create_device_buffer(buffer_ci, create_command_block(),
 									  total_bytes_v);
+
+	m_view_ubo.emplace(m_allocator.get(), m_gpu.queue_family,
+					   vk::BufferUsageFlagBits::eUniformBuffer);
+
+	m_instance_ssbo.emplace(m_allocator.get(), m_gpu.queue_family,
+							vk::BufferUsageFlagBits::eStorageBuffer);
+
+	using Pixel = std::array<std::byte, 4>;
+	static constexpr auto rgby_pixels_v = std::array{
+		Pixel{std::byte{0xff}, {}, {}, std::byte{0xff}},
+		Pixel{std::byte{}, std::byte{0xff}, {}, std::byte{0xff}},
+		Pixel{std::byte{}, {}, std::byte{0xff}, std::byte{0xff}},
+		Pixel{std::byte{0xff}, std::byte{0xff}, {}, std::byte{0xff}},
+	};
+	static constexpr auto rgby_bytes_v =
+		std::bit_cast<std::array<std::byte, sizeof(rgby_pixels_v)>>(
+			rgby_pixels_v);
+	static constexpr auto rgby_bitmap_v = Bitmap{
+		.bytes = rgby_bytes_v,
+		.size = {2, 2},
+	};
+	auto texture_ci = Texture::CreateInfo{
+		.device = *m_device,
+		.allocator = m_allocator.get(),
+		.queue_family = m_gpu.queue_family,
+		.command_block = create_command_block(),
+		.bitmap = rgby_bitmap_v,
+	};
+	// use Nearest filtering instead of Linear (interpolation).
+	texture_ci.sampler.setMagFilter(vk::Filter::eNearest);
+	m_texture.emplace(std::move(texture_ci));
+}
+
+void App::create_descriptor_sets() {
+	for (auto& descriptor_sets : m_descriptor_sets) {
+		descriptor_sets = allocate_sets();
+	}
 }
 
 auto App::asset_path(std::string_view const uri) const -> fs::path {
@@ -306,6 +390,13 @@ auto App::asset_path(std::string_view const uri) const -> fs::path {
 
 auto App::create_command_block() const -> CommandBlock {
 	return CommandBlock{*m_device, m_queue, *m_cmd_block_pool};
+}
+
+auto App::allocate_sets() const -> std::vector<vk::DescriptorSet> {
+	auto allocate_info = vk::DescriptorSetAllocateInfo{};
+	allocate_info.setDescriptorPool(*m_descriptor_pool)
+		.setSetLayouts(m_set_layout_views);
+	return m_device->allocateDescriptorSets(allocate_info);
 }
 
 void App::main_loop() {
@@ -397,6 +488,8 @@ void App::render(vk::CommandBuffer const command_buffer) {
 
 	command_buffer.beginRendering(rendering_info);
 	inspect();
+	update_view();
+	update_instances();
 	draw(command_buffer);
 	command_buffer.endRendering();
 
@@ -476,18 +569,106 @@ void App::inspect() {
 			ImGui::DragFloat("line width", &m_shader->line_width, 0.25f,
 							 line_width_range[0], line_width_range[1]);
 		}
+
+		static auto const inspect_transform = [](Transform& out) {
+			ImGui::DragFloat2("position", &out.position.x);
+			ImGui::DragFloat("rotation", &out.rotation);
+			ImGui::DragFloat2("scale", &out.scale.x, 0.1f);
+		};
+
+		ImGui::Separator();
+		if (ImGui::TreeNode("View")) {
+			inspect_transform(m_view_transform);
+			ImGui::TreePop();
+		}
+
+		ImGui::Separator();
+		if (ImGui::TreeNode("Instances")) {
+			for (std::size_t i = 0; i < m_instances.size(); ++i) {
+				auto const label = std::to_string(i);
+				if (ImGui::TreeNode(label.c_str())) {
+					inspect_transform(m_instances.at(i));
+					ImGui::TreePop();
+				}
+			}
+			ImGui::TreePop();
+		}
 	}
 	ImGui::End();
 }
 
+void App::update_view() {
+	auto const half_size = 0.5f * glm::vec2{m_framebuffer_size};
+	auto const mat_projection =
+		glm::ortho(-half_size.x, half_size.x, -half_size.y, half_size.y);
+	auto const mat_view = m_view_transform.view_matrix();
+	auto const mat_vp = mat_projection * mat_view;
+	auto const bytes =
+		std::bit_cast<std::array<std::byte, sizeof(mat_vp)>>(mat_vp);
+	m_view_ubo->write_at(m_frame_index, bytes);
+}
+
+void App::update_instances() {
+	m_instance_data.clear();
+	m_instance_data.reserve(m_instances.size());
+	for (auto const& transform : m_instances) {
+		m_instance_data.push_back(transform.model_matrix());
+	}
+	// can't use bit_cast anymore, reinterpret data as a byte array instead.
+	auto const span = std::span{m_instance_data};
+	void* data = span.data();
+	auto const bytes =
+		std::span{static_cast<std::byte const*>(data), span.size_bytes()};
+	m_instance_ssbo->write_at(m_frame_index, bytes);
+}
+
 void App::draw(vk::CommandBuffer const command_buffer) const {
 	m_shader->bind(command_buffer, m_framebuffer_size);
+	bind_descriptor_sets(command_buffer);
 	// single VBO at binding 0 at no offset.
 	command_buffer.bindVertexBuffers(0, m_vbo.get().buffer, vk::DeviceSize{});
 	// u32 indices after offset of 4 vertices.
 	command_buffer.bindIndexBuffer(m_vbo.get().buffer, 4 * sizeof(Vertex),
 								   vk::IndexType::eUint32);
+	auto const instances = static_cast<std::uint32_t>(m_instances.size());
 	// m_vbo has 6 indices.
-	command_buffer.drawIndexed(6, 1, 0, 0, 0);
+	command_buffer.drawIndexed(6, instances, 0, 0, 0);
+}
+
+void App::bind_descriptor_sets(vk::CommandBuffer const command_buffer) const {
+	auto writes = std::array<vk::WriteDescriptorSet, 3>{};
+	auto const& descriptor_sets = m_descriptor_sets.at(m_frame_index);
+	auto const set0 = descriptor_sets[0];
+	auto write = vk::WriteDescriptorSet{};
+	auto const view_ubo_info = m_view_ubo->descriptor_info_at(m_frame_index);
+	write.setBufferInfo(view_ubo_info)
+		.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+		.setDescriptorCount(1)
+		.setDstSet(set0)
+		.setDstBinding(0);
+	writes[0] = write;
+
+	auto const set1 = descriptor_sets[1];
+	auto const image_info = m_texture->descriptor_info();
+	write.setImageInfo(image_info)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setDescriptorCount(1)
+		.setDstSet(set1)
+		.setDstBinding(0);
+	writes[1] = write;
+	auto const instance_ssbo_info =
+		m_instance_ssbo->descriptor_info_at(m_frame_index);
+	write.setBufferInfo(instance_ssbo_info)
+		.setDescriptorType(vk::DescriptorType::eStorageBuffer)
+		.setDescriptorCount(1)
+		.setDstSet(set1)
+		.setDstBinding(1);
+	writes[2] = write;
+
+	m_device->updateDescriptorSets(writes, {});
+
+	command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+									  *m_pipeline_layout, 0, descriptor_sets,
+									  {});
 }
 } // namespace lvk
