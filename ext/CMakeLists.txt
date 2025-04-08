@@ -90,6 +90,7 @@ target_link_libraries(${PROJECT_NAME} INTERFACE
   glm::glm
   imgui::imgui
   vma::vma
+  spdlog::spdlog
 )
 
 # setup preprocessor defines
@@ -101,3 +102,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL Linux)
   # link to dynamic loader
   target_link_libraries(${PROJECT_NAME} INTERFACE dl)
 endif()
+
+add_subdirectory(src/spdlog-1.15.2)
+target_link_libraries(${PROJECT_NAME} INTERFACE spdlog::spdlog)
+target_include_directories(spdlog SYSTEM PUBLIC
+  src/spdlog-1.15.2/include
+)

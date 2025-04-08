@@ -5,7 +5,7 @@
 #include <cassert>
 #include <chrono>
 #include <fstream>
-#include <print>
+#include <spdlog/spdlog.h>
 #include <ranges>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -34,7 +34,7 @@ constexpr auto layout_binding(std::uint32_t binding,
 		auto ret = path / dir_name_v;
 		if (fs::is_directory(ret)) { return ret; }
 	}
-	std::println("[lvk] Warning: could not locate '{}' directory", dir_name_v);
+	spdlog::error("[lvk] Warning: could not locate '{}' directory", dir_name_v);
 	return fs::current_path();
 }
 
@@ -49,7 +49,7 @@ constexpr auto layout_binding(std::uint32_t binding,
 			return properties.layerName == layer;
 		};
 		if (std::ranges::find_if(available, pred) == available.end()) {
-			std::println("[lvk] [WARNING] Vulkan Layer '{}' not found", layer);
+			spdlog::error("[lvk] [WARNING] Vulkan Layer '{}' not found", layer);
 			continue;
 		}
 		ret.push_back(layer);
@@ -145,7 +145,7 @@ void App::create_surface() {
 
 void App::select_gpu() {
 	m_gpu = get_suitable_gpu(*m_instance, *m_surface);
-	std::println("[lvk] Using GPU: {}",
+	spdlog::error("[lvk] Using GPU: {}",
 				 std::string_view{m_gpu.properties.deviceName});
 }
 

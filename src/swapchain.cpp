@@ -1,9 +1,9 @@
+#include <spdlog/spdlog.h>
 #include <swapchain.hpp>
 #include <algorithm>
 #include <array>
 #include <cassert>
 #include <limits>
-#include <print>
 #include <stdexcept>
 
 namespace lvk {
@@ -122,7 +122,7 @@ auto Swapchain::recreate(glm::ivec2 size) -> bool {
 	create_image_views();
 
 	size = get_size();
-	std::println("[lvk] Swapchain [{}x{}]", size.x, size.y);
+	spdlog::info("[lvk] Swapchain [{}x{}]", size.x, size.y);
 	return true;
 }
 

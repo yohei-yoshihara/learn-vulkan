@@ -1,6 +1,6 @@
+#include <spdlog/spdlog.h>
 #include <vma.hpp>
 #include <numeric>
-#include <print>
 #include <stdexcept>
 
 namespace lvk {
@@ -44,7 +44,7 @@ auto vma::create_buffer(BufferCreateInfo const& create_info,
 						BufferMemoryType const memory_type,
 						vk::DeviceSize const size) -> Buffer {
 	if (size == 0) {
-		std::println(stderr, "Buffer cannot be 0-sized");
+		spdlog::error("Buffer cannot be 0-sized");
 		return {};
 	}
 
@@ -75,7 +75,7 @@ auto vma::create_buffer(BufferCreateInfo const& create_info,
 		vmaCreateBuffer(create_info.allocator, &vma_buffer_ci, &allocation_ci,
 						&buffer, &allocation, &allocation_info);
 	if (result != VK_SUCCESS) {
-		std::println(stderr, "Failed to create VMA Buffer");
+		spdlog::error("Failed to create VMA Buffer");
 		return {};
 	}
 
@@ -139,7 +139,7 @@ auto vma::create_image(ImageCreateInfo const& create_info,
 					   std::uint32_t const levels, vk::Format const format,
 					   vk::Extent2D const extent) -> Image {
 	if (extent.width == 0 || extent.height == 0) {
-		std::println(stderr, "Images cannot have 0 width or height");
+		spdlog::error("Images cannot have 0 width or height");
 		return {};
 	}
 	auto image_ci = vk::ImageCreateInfo{};
@@ -162,7 +162,7 @@ auto vma::create_image(ImageCreateInfo const& create_info,
 	auto const result = vmaCreateImage(create_info.allocator, &vk_image_ci,
 									   &allocation_ci, &image, &allocation, {});
 	if (result != VK_SUCCESS) {
-		std::println(stderr, "Failed to create VMA Image");
+		spdlog::error("Failed to create VMA Image");
 		return {};
 	}
 

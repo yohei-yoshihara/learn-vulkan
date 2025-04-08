@@ -1,6 +1,6 @@
 #include <window.hpp>
 #include <cstdint>
-#include <print>
+#include <spdlog/spdlog.h>
 #include <stdexcept>
 
 namespace lvk {
@@ -13,7 +13,7 @@ void Deleter::operator()(GLFWwindow* window) const noexcept {
 
 auto glfw::create_window(glm::ivec2 const size, char const* title) -> Window {
 	static auto const on_error = [](int const code, char const* description) {
-		std::println(stderr, "[GLFW] Error {}: {}", code, description);
+		spdlog::error("[GLFW] Error {}: {}", code, description);
 	};
 	glfwSetErrorCallback(on_error);
 	if (glfwInit() != GLFW_TRUE) {

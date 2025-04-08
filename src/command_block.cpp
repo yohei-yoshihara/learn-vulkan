@@ -1,6 +1,6 @@
 #include <command_block.hpp>
 #include <chrono>
-#include <print>
+#include <spdlog/spdlog.h>
 
 namespace lvk {
 using namespace std::chrono_literals;
@@ -42,7 +42,7 @@ void CommandBlock::submit_and_wait() {
 		static_cast<std::uint64_t>(std::chrono::nanoseconds(30s).count());
 	auto const result = m_device.waitForFences(*fence, vk::True, timeout_v);
 	if (result != vk::Result::eSuccess) {
-		std::println(stderr, "Failed to submit Command Buffer");
+		spdlog::error("Failed to submit Command Buffer");
 	}
 	// free the command buffer.
 	m_command_buffer.reset();
