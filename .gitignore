@@ -1,5 +1,3 @@
-**/.vs/*
-**/.vscode/*
 build/*
 out/*
 .cache
@@ -11,5 +9,7 @@ compile_commands.json
 
 imgui.ini
 
-.vscode/
+.vscode/*
+!.vscode/c_cpp_properties.json
+
 *.log
