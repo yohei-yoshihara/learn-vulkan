@@ -7,6 +7,8 @@
 #include <fstream>
 #include <spdlog/spdlog.h>
 #include <ranges>
+#include <vector>
+#include <span>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 

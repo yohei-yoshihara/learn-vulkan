@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.24)
 
 project(learn-vk)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # set C++ options
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +18,11 @@ add_subdirectory(ext)
 
 # declare executable target
 add_executable(${PROJECT_NAME})
+
+# Vulkan
+find_package(Vulkan REQUIRED)
+target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIR})
+target_link_libraries(${PROJECT_NAME} PRIVATE ${Vulkan_LIBRARIES})
 
 # link to ext target
 target_link_libraries(${PROJECT_NAME} PRIVATE
